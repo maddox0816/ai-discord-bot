@@ -1,18 +1,12 @@
 from flask import Flask, render_template, send_from_directory   
 from threading import Thread
-app = Flask('',static_url_path='/static')
+app = Flask('')
 
 @app.route('/')
 def main():
-    return render_template("index.html")
+    return "Chatbot is online"
 
-@app.route('/css/landing.css')
-def css():
-    return send_from_directory('css', "templates/css/landing.css")
 
-@app.route('/js/landing.js')
-def js():
-    return send_from_directory('js', "templates/js/landing.js")
 
 
 

@@ -1,367 +1,196 @@
-import openai
-from openai import error as aierror
 import discord
-from discord.ext import commands
+import openai
+import time
 import os
-from os import getenv
-from dotenv import load_dotenv
-from discord_slash import SlashCommand, SlashContext
-import urllib
+import speech_recognition as sr
+from gtts import gTTS
+from pydub import AudioSegment
+from mutagen.mp3 import MP3
 import WebServer
+r = sr.Recognizer()
 
-load_dotenv("C:/Users/holla/Documents/aibot/keys/keys.env")
+openai.api_key = "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"
 
-bot = commands.Bot(command_prefix='ai.')
-slash=SlashCommand(bot, sync_commands=True)
-bot.remove_command('help')
-openai.api_key = os.getenv('OPENAI_KEY')
 
-@bot.event
-async def on_ready():
-    print('Logged in as')
-    print(bot.user.name)
-    print(bot.user.id)
-    print('------')
-    await bot.change_presence(activity=discord.Game(name='in development'), status=discord.Status.do_not_disturb)
+def vc_required(func):
+    async def get_vc(self, msg):
+        vc = await self.get_vc(msg)
+        if not vc:
+            return
+        await func(self, msg, vc)
+    return get_vc
 
-@bot.event
-async def on_command_error(ctx,error):
-    if isinstance(error, commands.CommandNotFound):
-        await ctx.reply(f"{ctx.author.mention}, that command does not exist")
-    if isinstance(error, discord.HTTPException):
-        await ctx.reply(f"{ctx.author.mention}, something went wrong")
 
-@slash.slash(name='ping',description='latency test')
-async def ping(ctx: SlashContext):
-    await ctx.reply(f'Pong! Responded in {bot.latency * 1000:.0f}ms')
-@bot.command()
-async def ping(ctx):
-    await ctx.reply(f'Pong! Responded in {bot.latency * 1000:.0f}ms')
 
-@slash.slash(name='help',description='shows help menu')
-async def help(ctx: SlashContext):
-    embed = discord.Embed(title='Help', description='List of commands', color=0x00ff00)
-    embed.add_field(name='help', value='Shows this message', inline=False)
-    embed.add_field(name='status', value='Shows the status of the bot', inline=False)
-    embed.add_field(name='ping', value='Shows the latency of the bot', inline=False)
-    embed.add_field(name='request [engine name]', value='Requests a response from the API', inline=False)
-    embed.add_field(name='explaincode [language] [code]', value='Explains a code snippet', inline=False)
-    embed.add_field(name='writecode [language] [description]', value='Writes a code snippet--works best with python', inline=False)
-    embed.add_field(name='translatecode [starting language] [ending language] [code]', value='Translates a code snippet', inline=False)
-    embed.add_field(name='ask [question]', value='Ask the bot a question', inline=False)
-    embed.add_field(name='paragraph_completion [paragraph]', value='Offers sentence suggestions to continue a paragraph', inline=False)
-    embed.add_field(name='summarize [text]', value='Summarizes a text in a way that anyone can understand', inline=False)
-    await ctx.send(embed=embed)
-@bot.command()
-async def help(ctx):
-    embed = discord.Embed(title='Help', description='List of commands', color=0x00ff00)
-    embed.add_field(name='help', value='Shows this message', inline=False)
-    embed.add_field(name='status', value='Shows the status of the bot', inline=False)
-    embed.add_field(name='ping', value='Shows the latency of the bot', inline=False)
-    embed.add_field(name='request [engine name]', value='Requests a response from the API', inline=False)
-    embed.add_field(name='explaincode [language] [code]', value='Explains a code snippet', inline=False)
-    embed.add_field(name='writecode [language] [description]', value='Writes a code snippet--works best with python', inline=False)
-    embed.add_field(name='translatecode [starting language] [ending language] [code]', value='Translates a code snippet', inline=False)
-    embed.add_field(name='ask [question]', value='Ask the bot a question', inline=False)
-    embed.add_field(name='paragraph_completion [paragraph]', value='Offers sentence suggestions to continue a paragraph', inline=False)
-    embed.add_field(name='summarize [text]', value='Summarizes a text in a way that anyone can understand', inline=False)
-    await ctx.send(embed=embed)
-    
-@slash.slash(name='status',description='shows the status of the bot')
-async def status(ctx: SlashContext):
-    try:
-        x = openai.Engine.retrieve("davinci")
-        codex_status = x.ready
-    except:
-        codex_status = False
-    try:
-        x = openai.Engine.retrieve("babbage-instruct-beta")
-        babbage_status = x.ready
-    except:
-        babbage_status = False
-    try:
-        x = openai.Engine.retrieve("curie")
-        curie_status = x.ready
-    except:
-        curie_status = False
-    try:
-        site_code=urllib.request.urlopen("https://bot.themaddoxnetwork.com").getcode()
-    except:
-        site_code=0
-    if codex_status:
-        codex_status = ":white_check_mark:"
-    else:
-        codex_status = ":x:"
-    if babbage_status:
-        babbage_status = ":white_check_mark:"
-    else:
-        babbage_status = ":x:"
-    if curie_status:
-        curie_status = ":white_check_mark:"
-    else:
-        curie_status = ":x:"
-    if site_code==200:
-        site_status = ":white_check_mark:"
-    else:
-        site_status = ":x:"
-    embedVar = discord.Embed(title="System Status", description="", color=0x779ee4)
-    embedVar.add_field(name="Discord bot", value=":white_check_mark:", inline=False)
-    embedVar.add_field(name="Website", value=site_status, inline=False)
-    embedVar.add_field(name="Coding AI", value=codex_status, inline=False)
-    embedVar.add_field(name="Chatting and Pragraph Analysis AI", value=babbage_status, inline=False)
-    embedVar.add_field(name="Paragraph Completion AI", value=curie_status, inline=False)
-    await ctx.send(embed=embedVar)
+class Client(discord.Client):
+    def __init__(self, *args, **kwargs):
+        super().__init__(*args, **kwargs)
+        self.connections = {voice.guild.id: voice for voice in self.voice_clients}
+        self.playlists = {}
 
-@slash.slash(name='request',description='requests a response from the API')
-async def request(ctx: SlashContext, engine):
+        self.commands = {
+            '!conversation': self.start_recording,
+            '!stop': self.stop_recording,
+            '!end': self.end_conversation,
+        }
 
-    try:
-        x = openai.Engine.retrieve(f"{engine}")
-        if(x.ready):
-            await ctx.reply(f"{x.id} is available")
+    async def get_vc(self, message):
+        vc = message.author.voice
+        if not vc:
+            await message.channel.send("You're not in a vc right now")
+            return
+        connection = self.connections.get(message.guild.id)
+        if connection:
+            if connection.channel.id == message.author.voice.channel.id:
+                return connection
+
+            await connection.move_to(vc.channel)
+            return connection
         else:
-            await ctx.reply(f"{x.id} is not available")
-    except aierror.APIError:
-        await ctx.reply(f"{engine} is not a valid engine")
+            vc = await vc.channel.connect()
+            self.connections.update({message.guild.id: vc})
+            return vc
 
-@slash.slash(name='explaincode',description='explains a code snippet')
-async def explaincode(ctx: SlashContext, language, *, code):
+    async def on_message(self, msg):
+        if not msg.content:
+            return
+        cmd = msg.content.split()[0]
+        if cmd in self.commands:
+            await self.commands[cmd](msg)
 
-    code=code.replace('```','')
-    code=code.replace('`','')
-    response=openai.Completion.create(
-    engine="davinci-codex",
-    prompt=f"explain the following {language} code: \n{code}",
-    max_tokens=500,
-    temperature=0,
-    top_p=1,
-    frequency_penalty=1,
-    presence_penalty=0,
-    stop=["\n\n\n"]
-    )
-    print(response)
-    if(language!="python"):
-        response.choices[0].text=response.choices[0].text.replace('#','//')
-    await ctx.reply(f'{ctx.author.mention}```{language}\n{response.choices[0].text}```')
-@bot.command()
-async def explaincode(ctx, language, *, code):
+    @vc_required
+    async def start_recording(self, msg, vc):
+      try:
+        vc.start_recording(discord.Sink(), self.finished_callback, msg.channel)
 
-    code=code.replace('```','')
-    code=code.replace('`','')
-    response=openai.Completion.create(
-    engine="davinci-codex",
-    prompt=f"explain the following {language} code: \n{code}",
-    max_tokens=500,
-    temperature=0,
-    top_p=1,
-    frequency_penalty=1,
-    presence_penalty=0,
-    stop=["\n\n\n"]
-    )
-    print(response)
-    if(language!="python"):
-        response.choices[0].text=response.choices[0].text.replace('#','//')
-    await ctx.reply(f'{ctx.author.mention}```{language}\n{response.choices[0].text}```')
-
-@slash.slash(name='writecode',description='writes a code snippet--works best with python')
-async def writecode(ctx: SlashContext, language, *, prompt):
-
-    response=openai.Completion.create(
-    engine="davinci-codex",
-    prompt=f"write the following {language} code: \n{prompt}:\n",
-    max_tokens=400,
-    temperature=0,
-    top_p=1,
-    frequency_penalty=1,
-    presence_penalty=0,
-    stop=["\n\n\n", "# ","// why","'''"]
-    )
-    response=response.choices[0].text
-    print(response)
-    response=response.replace('       ',' ').replace('!!!','')
-    if language=="c#":
-        language="csharp"
-    if(language=="python"):
-        commentchar='#'
-    else:
-        commentchar='//'
-    try:
-        await ctx.send(f"{ctx.author.mention}\n ```{language}\n{commentchar}{prompt} in {language}\n{response}```")
-    except discord.errors.NotFound:
-        print("well that's odd") #if anyone knows why this error seems to randomly occur, PLEASE let me know
-@bot.command()
-async def writecode(ctx, language, *, prompt):
+        await msg.channel.send("The conversation has started! Type `!stop` to end the current question.")
+      except Exception as e:
+        await msg.channel.send("An error has occurred. Likely the bot was already listening to a conversation in this server.")
+        await msg.channel.send("Exception: "+str(e))
+        return
 
 
-    response=openai.Completion.create(
-    engine="davinci-codex",
-    prompt=f"write the following {language} code: \n{prompt}:\n",
-    max_tokens=400,
-    temperature=0,
-    top_p=1,
-    frequency_penalty=1,
-    presence_penalty=0,
-    stop=["\n\n\n", "# ","// why","'''"]
-    )
-    response=response.choices[0].text
-    print(response)
-    response=response.replace('       ',' ').replace('!!!','')
-    if language=="c#":
-        language="csharp"
-    if(language=="python"):
-        commentchar='#'
-    else:
-        commentchar='//'
-    try:
-        await ctx.send(f"{ctx.author.mention}\n ```{language}\n{commentchar}{prompt} in {language}\n{response}```")
-    except discord.errors.NotFound:
-        print("well that's odd") #if anyone knows why this error seems to randomly occur, PLEASE let me know
+    @vc_required
+    async def end_conversation(self, msg, vc):
+        vc.stop_recording()
+        global bobbio
+        bobbio = True
+        #tts = gTTS("Thanks for chatting with me. Good bye.")
+        #tts.save('goodbye.mp3')
 
-@slash.slash(name='translatecode',description='translates a code snippet')
-async def translatecode(ctx: SlashContext, language1, language2, *, code):
-
-    code=code.replace('```','')
-    code=code.replace('`','')    
-    response = openai.Completion.create(
-    engine="davinci-codex",
-    prompt=f"translate this {language1} code into equivalent {language2}:\n\n{code}\n\n{language2} code goes here:\n",
-    temperature=0,
-    max_tokens=500,
-    top_p=1,
-    frequency_penalty=1,
-    presence_penalty=0,
-    stop=['"""','\n\n\n']
-    )
-    print(response)
-    response.choices[0].text=response.choices[0].text.replace('\n\n\n','\n')
-    await ctx.reply(f'{ctx.author.mention}```{language2}\n{response.choices[0].text}```')
-@bot.command()
-async def translatecode(ctx, language1, language2, *, code):
-
-    code=code.replace('```','')
-    code=code.replace('`','')    
-    response = openai.Completion.create(
-    engine="davinci-codex",
-    prompt=f"translate this {language1} code into equivalent {language2}:\n\n{code}\n\n{language2} code goes here:\n",
-    temperature=0,
-    max_tokens=500,
-    top_p=1,
-    frequency_penalty=1,
-    presence_penalty=0,
-    stop=['"""','\n\n\n']
-    )
-    print(response)
-    response.choices[0].text=response.choices[0].text.replace('\n\n\n','\n')
-    await ctx.reply(f'{ctx.author.mention}```{language2}\n{response.choices[0].text}```')
-
-@slash.slash(name='ask', description='Ask the ai a question. Keep in mind that it has very limited knowledge of current events.')
-async def ask(ctx: SlashContext, *, question):
-
-    response = openai.Completion.create(
-    engine="babbage-instruct-beta", #curie-instruct-beta-v2 is better if it's not too expensive
-    prompt=f"Answer the question as accurately as possible while giving as much information as possible, but make it relatively easy to understand.\n question: {question} \n answer: ",
-    max_tokens=80,
-    temperature=0,
-    top_p=1,
-    frequency_penalty=1,
-    presence_penalty=0,
-    stop=["question:"]
-    )
-    response=response.choices[0].text.replace('\n','')
-    await ctx.reply(f'{ctx.author.mention}\n Question: {question}\n Answer: **{response}**')
-@bot.command()
-async def ask(ctx, *, question):
-
-    response = openai.Completion.create(
-    engine="babbage-instruct-beta", #curie-instruct-beta-v2 is better if it's not too expensive
-    prompt=f"Answer the question as accurately as possible while giving as much information as possible, but make it relatively easy to understand.\n question: {question} \n answer: ",
-    max_tokens=80,
-    temperature=0,
-    top_p=1,
-    frequency_penalty=1,
-    presence_penalty=0,
-    stop=["question:"]
-    )
-    response=response.choices[0].text.replace('\n','')
-    await ctx.reply(f'{ctx.author.mention}\n Question: {question}\n Answer: **{response}**')
-
-@slash.slash(name='paragraph_completion', description='Suggests a sentence to continue a given paragraph')
-async def paragraph_completion(ctx: SlashContext, *, paragraph):
-    with open('prompts/paragraphSuggestionPrompt.txt', 'r') as f:
-        examples = f.read()
-        f.close()
-
-    response = openai.Completion.create(
-    engine="curie",
-    prompt=f"{examples} {paragraph}\n output:",
-    max_tokens=100,
-    temperature=0.7,
-    top_p=1,
-    frequency_penalty=0.7,
-    presence_penalty=2,
-    stop=["Input:", '4.']
-    )
-    print(response)
-    await ctx.reply(f'{ctx.author.mention}\n Your paragraph:\n{paragraph}\n\n**{response.choices[0].text}**')
-@bot.command()
-async def paragraph_completion(ctx, *, paragraph):
-    with open('prompts/paragraphSuggestionPrompt.txt', 'r') as f:
-        examples = f.read()
-        f.close()
-
-    response = openai.Completion.create(
-    engine="curie",
-    prompt=f"{examples} {paragraph}\n output:",
-    max_tokens=100,
-    temperature=0.7,
-    top_p=1,
-    frequency_penalty=0.7,
-    presence_penalty=2,
-    stop=["Input:", '4.']
-    )
-    print(response)
-    await ctx.reply(f'{ctx.author.mention}\n Your paragraph:\n{paragraph}\n\n**{response.choices[0].text}**')
-
-@slash.slash(name='summarize', description='Summarizes a given text')
-async def summarize(ctx: SlashContext, *, text):
-    with open('prompts/summarizePrompt.txt', 'r') as f:
-        examples = f.read()
-        f.close()
+        bob.play(discord.FFmpegOpusAudio(source="bot_audio_files/goodbye.mp3"), after=lambda e: print('done', e))
+        #bobs_audio = MP3("bot_audio_files/goodbye.mp3")
+        #audio_length = bobs_audio.info.length+1
+        #print(audio_length)
 
 
-    response = openai.Completion.create(
-    engine="babbage-instruct-beta", #curie-instruct-beta-v2 is better if it's not too expensive
-    prompt=f"{examples} {text}\n rephrasing:",
-    temperature=0.5,
-    max_tokens=100,
-    top_p=1,
-    frequency_penalty=0.2,
-    presence_penalty=0,
-    stop=["Rephrase this passage in a way that a young child could understand:"]
-    )
-    print(response)
-    await ctx.send(f'{ctx.author.mention}\nYour text:\n{text}\nSummary: **{response.choices[0].text}**')
-@bot.command()
-async def summarize(ctx: SlashContext, *, text):
-    with open('prompts/summarizePrompt.txt', 'r') as f:
-        examples = f.read()
-        f.close()
+        time.sleep(4.072)
+        await vc.disconnect()
+        await msg.channel.send("The conversation has ended.")
+
+    @vc_required
+    async def stop_recording(self, msg, vc):
+        global bob
+        global tom
+        global bobbio
+        bob = vc
+        tom = msg
+        bobbio = False
+        vc.stop_recording()
 
 
-    response = openai.Completion.create(
-    engine="babbage-instruct-beta", #curie-instruct-beta-v2 is better if it's not too expensive
-    prompt=f"{examples} {text}\n rephrasing:",
-    temperature=0.5,
-    max_tokens=100,
-    top_p=1,
-    frequency_penalty=0.2,
-    presence_penalty=0,
-    stop=["Rephrase this passage in a way that a young child could understand:"]
-    )
-    print(response)
-    await ctx.send(f'{ctx.author.mention}\nYour text:\n{text}\nSummary: **{response.choices[0].text}**')
-    #test change
+    async def finished_callback(self, sink, channel, *args):
+
+
+        if bobbio:
+            return
+        
+        try:
+          recorded_users = [
+              f" <@{str(user_id)}> ({os.path.split(audio.file)[1]}) "
+              for user_id, audio in sink.audio_data.items()
+          ]
+          s=recorded_users[0]
+          audio = s[s.find('(')+1:s.find(')')]
+          print(audio)
+          stereo_audio = AudioSegment.from_file(audio,format="wav")
+          mono_audios = stereo_audio.split_to_mono()
+          mono_audios[0].export(audio,format="wav")
+
+        except Exception as e:
+          await tom.channel.send("An error has occurred. Likely you are muted or you stopped the bot before it could hear you.")
+          await channel.send("Exception: "+str(e))
+          return
+
+        try:
+
+          with sr.WavFile(audio) as source:
+              audio = r.record(source)
+
+          text = r.recognize_google(audio)
+        except Exception as e:
+          await channel.send("An error has occurred. Likely the bot was unable to understand what you said and it crashed.")
+          await channel.send("Exception: "+str(e))
+          return
+    
+
+
+        try:
+            await channel.send("You said: " + str(text))
+            os.remove(s[s.find('(')+1:s.find(')')])
+        except Exception as e:
+            await channel.send("Exception: "+str(e))
+            return
+        
+        question = text
+
+        response = openai.Completion.create(
+        engine="babbage-instruct-beta", #curie-instruct-beta-v2 is better if it's not too expensive
+        prompt=f"The following is a conversation with an AI assistant. The assistant is helpful, creative, clever, and very friendly.\n Human: {question} \n AI: ",
+        max_tokens=80,
+        temperature=0,
+        top_p=1,
+        frequency_penalty=1,
+        presence_penalty=0,
+        stop=["Human:"]
+        )
+        response=response.choices[0].text.replace('\n','')
+
+        tts = gTTS(response)
+        tts.save('bot_audio_files/response.mp3')
+
+        bob.play(discord.FFmpegOpusAudio(source="bot_audio_files/response.mp3"), after=lambda e: print('done', e))
+
+        bobs_audio = MP3("bot_audio_files/response.mp3")
+        audio_length = bobs_audio.info.length
+        print(audio_length)
+
+
+        time.sleep(audio_length)
+        bob.start_recording(discord.Sink(), self.finished_callback, tom.channel)
+        await tom.channel.send("The bot is now listening for your response. Type `!stop` to end the current question or `!end` to end the conversation.")
+
+    
+
+        
+        
+
+
+
+
+    async def on_voice_state_update(self, member, before, after):
+        if member.id != self.user.id:
+            return
+        # Filter out updates other than when we leave a channel we're connected to
+        if member.guild.id not in self.connections and (not before.channel and after.channel):
+            return
+
+        print("Disconnected")
+        del self.connections[member.guild.id]
+
+
+
+intents = discord.Intents.default()
+client = Client(intents=intents)
 WebServer.start()
-bot.run(os.getenv('DISCORD_TOKEN'))
-
-
+client.run('OTIzMDM0NTM2Mzk1Mjk2Nzg4.YcKI5g.W0GZKiHpEZLEhzTd-slzPaa2rrE')
